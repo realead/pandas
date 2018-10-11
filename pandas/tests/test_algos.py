@@ -726,6 +726,16 @@ class TestIsin(object):
                             np.asarray(values, dtype=np.float64))
         tm.assert_numpy_array_equal(np.array([True]), result)
 
+    def test_nan_isin_for_large(self):
+        # GH 22205
+        s = pd.Series(np.full(10**7, np.nan, dtype=np.float64), copy=False)
+        assert s.isin([np.nan]).all()
+
+    def test_nan_isin_for_small(self):
+        # GH 22205
+        s = pd.Series(np.full(10**4, np.nan, dtype=np.float64), copy=False)
+        assert s.isin([np.nan]).all()
+
     def test_no_cast(self):
         # GH 22160
         # ensure 42 is not casted to a string

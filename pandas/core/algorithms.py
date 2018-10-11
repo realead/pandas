@@ -417,14 +417,9 @@ def isin(comps, values):
     comps, dtype, _ = _ensure_data(comps)
     values, _, _ = _ensure_data(values, dtype=dtype)
 
-    # faster for larger cases to use np.in1d
     f = lambda x, y: htable.ismember_object(x, values)
 
-    # GH16012
-    # Ensure np.in1d doesn't get object types or it *may* throw an exception
-    if len(comps) > 1000000 and not is_object_dtype(comps):
-        f = lambda x, y: np.in1d(x, y)
-    elif is_integer_dtype(comps):
+    if is_integer_dtype(comps):
         try:
             values = values.astype('int64', copy=False)
             comps = comps.astype('int64', copy=False)
