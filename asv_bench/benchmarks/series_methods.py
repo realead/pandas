@@ -36,6 +36,19 @@ class IsIn(object):
         self.s.isin(self.values)
 
 
+class IsInLongSeries(object):
+
+    params = [['int64', 'float64'], [1, 2, 5, 10, 10**5]]
+    param_names = ['dtype', 'M']
+
+    def setup(self, dtype, M):
+        self.s = Series(np.arange(10**7)).astype(dtype)
+        self.values = np.arange(M).astype(dtype)
+
+    def time_isin(self, dtypes, M):
+        self.s.isin(self.values)
+
+
 class IsInFloat64(object):
 
     def setup(self):
