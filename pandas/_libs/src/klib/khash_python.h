@@ -42,7 +42,7 @@ khint32_t PANDAS_INLINE kh_float64_hash_func(double val){
 #define kh_float64_hash_equal(a, b) ((a) == (b) || ((b) != (b) && (a) != (a)))
 
 #define KHASH_MAP_INIT_FLOAT64(name, khval_t)								\
-	KHASH_INIT(name, khfloat64_t, khval_t, 1, kh_float64_hash_func, kh_float64_hash_equal)
+	KHASH_INIT(name, khfloat64_t, khval_t, 1, kh_float64_hash_func, kh_float64_hash_equal, LINEAR_STEPS_64BIT)
 
 KHASH_MAP_INIT_FLOAT64(float64, size_t)
 
@@ -76,13 +76,13 @@ typedef PyObject* kh_pyobject_t;
 
 #define KHASH_MAP_INIT_PYOBJECT(name, khval_t)							\
 	KHASH_INIT(name, kh_pyobject_t, khval_t, 1,						\
-			   kh_python_hash_func, kh_python_hash_equal)
+			   kh_python_hash_func, kh_python_hash_equal, LINEAR_STEPS_BIG_OBJECT)
 
 KHASH_MAP_INIT_PYOBJECT(pymap, Py_ssize_t)
 
 #define KHASH_SET_INIT_PYOBJECT(name)                                  \
 	KHASH_INIT(name, kh_pyobject_t, char, 0,     \
-			   kh_python_hash_func, kh_python_hash_equal)
+			   kh_python_hash_func, kh_python_hash_equal, LINEAR_STEPS_BIG_OBJECT)
 
 KHASH_SET_INIT_PYOBJECT(pyset)
 

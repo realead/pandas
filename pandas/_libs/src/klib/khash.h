@@ -218,9 +218,10 @@ khint32_t PANDAS_INLINE murmur2_64to32(khint64_t k){
     return murmur2_32_32to32(k1, k2);
 }
 
+#define __ac_inc_linear(k, m) 1
 
 #ifdef KHASH_LINEAR
-#define __ac_inc(k, m) 1
+#define __ac_inc(k, m) __ac_inc_linear(k, m)
 #else
 #define __ac_inc(k, m) (murmur2_32to32(k) | 1) & (m)
 #endif
@@ -248,7 +249,7 @@ static const double __ac_HASH_UPPER = 0.77;
 	extern khint_t kh_put_##name(kh_##name##_t *h, khkey_t key, int *ret); \
 	extern void kh_del_##name(kh_##name##_t *h, khint_t x);
 
-#define KHASH_INIT2(name, SCOPE, khkey_t, khval_t, kh_is_map, __hash_func, __hash_equal) \
+#define KHASH_INIT2(name, SCOPE, khkey_t, khval_t, kh_is_map, __hash_func, __hash_equal, LINEAR_STEPS) \
 	typedef struct {													\
 		khint_t n_buckets, size, n_occupied, upper_bound;				\
 		khint32_t *flags;												\
@@ -276,13 +277,18 @@ static const double __ac_HASH_UPPER = 0.77;
 	SCOPE khint_t kh_get_##name(const kh_##name##_t *h, khkey_t key) 	\
 	{																	\
 		if (h->n_buckets) {												\
-			khint_t inc, k, i, last, mask;								\
+			khint_t inc, k, i, last, mask, cnt;						    \
 			mask = h->n_buckets - 1;									\
 			k = __hash_func(key); i = k & mask;							\
-			inc = __ac_inc(k, mask); last = i; /* inc==1 for linear probing */ \
+            cnt=0;                                                      \
+			inc = __ac_inc_linear(k, mask); last = i;                   \
 			while (!__ac_isempty(h->flags, i) && (__ac_isdel(h->flags, i) || !__hash_equal(h->keys[i], key))) { \
+                if (cnt == LINEAR_STEPS){                               \
+                     inc = __ac_inc(k, mask); last = i;                 \
+                }                                                       \
 				i = (i + inc) & mask; 									\
 				if (i == last) return h->n_buckets;						\
+                cnt++;                                                  \
 			}															\
 			return __ac_iseither(h->flags, i)? h->n_buckets : i;		\
 		} else return 0;												\
@@ -314,11 +320,18 @@ static const double __ac_HASH_UPPER = 0.77;
 					if (kh_is_map) val = h->vals[j];					\
 					__ac_set_isempty_true(h->flags, j);					\
 					while (1) { /* kick-out process; sort of like in Cuckoo hashing */ \
-						khint_t inc, k, i;								\
+						khint_t inc, k, i, cnt;							\
 						k = __hash_func(key);							\
 						i = k & new_mask;								\
-						inc = __ac_inc(k, new_mask);					\
-						while (!__ac_isempty(new_flags, i)) i = (i + inc) & new_mask; \
+                        cnt=0;                                          \
+						inc = __ac_inc_linear(k, new_mask);				\
+						while (!__ac_isempty(new_flags, i)){            \
+                                 if (cnt == LINEAR_STEPS){              \
+                                     inc = __ac_inc(k, new_mask);       \
+                                 }                                      \
+                                 i = (i + inc) & new_mask;              \
+                                 cnt++;                                 \
+                        }                                               \
 						__ac_set_isempty_false(new_flags, i);			\
 						if (i < h->n_buckets && __ac_iseither(h->flags, i) == 0) { /* kick out the existing element */ \
 							{ khkey_t tmp = h->keys[i]; h->keys[i] = key; key = tmp; } \
@@ -351,14 +364,19 @@ static const double __ac_HASH_UPPER = 0.77;
 			else kh_resize_##name(h, h->n_buckets + 1); /* expand the hash table */ \
 		} /* TODO: to implement automatically shrinking; resize() already support shrinking */ \
 		{																\
-			khint_t inc, k, i, site, last, mask = h->n_buckets - 1;		\
+			khint_t inc, k, i, site, last, cnt, mask = h->n_buckets - 1;		\
 			x = site = h->n_buckets; k = __hash_func(key); i = k & mask; \
 			if (__ac_isempty(h->flags, i)) x = i; /* for speed up */	\
 			else {														\
-				inc = __ac_inc(k, mask); last = i;						\
+                cnt = 0;                                                \
+				inc = __ac_inc_linear(k, mask); last = i;						\
 				while (!__ac_isempty(h->flags, i) && (__ac_isdel(h->flags, i) || !__hash_equal(h->keys[i], key))) { \
+                    if (cnt == LINEAR_STEPS){                           \
+                        inc = __ac_inc(k, mask); last = i;              \
+                    }                                                   \
 					if (__ac_isdel(h->flags, i)) site = i;				\
 					i = (i + inc) & mask; 								\
+                    cnt++;                                              \
 					if (i == last) { x = site; break; }					\
 				}														\
 				if (x == h->n_buckets) {								\
@@ -388,8 +406,8 @@ static const double __ac_HASH_UPPER = 0.77;
 		}																\
 	}
 
-#define KHASH_INIT(name, khkey_t, khval_t, kh_is_map, __hash_func, __hash_equal) \
-	KHASH_INIT2(name, PANDAS_INLINE, khkey_t, khval_t, kh_is_map, __hash_func, __hash_equal)
+#define KHASH_INIT(name, khkey_t, khval_t, kh_is_map, __hash_func, __hash_equal, LINEAR_STEPS) \
+	KHASH_INIT2(name, PANDAS_INLINE, khkey_t, khval_t, kh_is_map, __hash_func, __hash_equal, LINEAR_STEPS)
 
 /* --- BEGIN OF HASH FUNCTIONS --- */
 
@@ -576,12 +594,16 @@ PANDAS_INLINE khint_t __ac_Wang_hash(khint_t key)
 
 /* More convenient interfaces */
 
+#define LINEAR_STEPS_BIG_OBJECT 0
+#define LINEAR_STEPS_32BIT 3
+#define LINEAR_STEPS_64BIT 3
+
 /*! @function
   @abstract     Instantiate a hash set containing integer keys
   @param  name  Name of the hash table [symbol]
  */
 #define KHASH_SET_INIT_INT(name)										\
-	KHASH_INIT(name, khint32_t, char, 0, kh_int_hash_func, kh_int_hash_equal)
+	KHASH_INIT(name, khint32_t, char, 0, kh_int_hash_func, kh_int_hash_equal, LINEAR_STEPS_32BIT)
 
 /*! @function
   @abstract     Instantiate a hash map containing integer keys
@@ -589,17 +611,17 @@ PANDAS_INLINE khint_t __ac_Wang_hash(khint_t key)
   @param  khval_t  Type of values [type]
  */
 #define KHASH_MAP_INIT_INT(name, khval_t)								\
-	KHASH_INIT(name, khint32_t, khval_t, 1, kh_int_hash_func, kh_int_hash_equal)
+	KHASH_INIT(name, khint32_t, khval_t, 1, kh_int_hash_func, kh_int_hash_equal, LINEAR_STEPS_32BIT)
 
 /*! @function
   @abstract     Instantiate a hash map containing 64-bit integer keys
   @param  name  Name of the hash table [symbol]
  */
 #define KHASH_SET_INIT_UINT64(name)										\
-	KHASH_INIT(name, khuint64_t, char, 0, kh_int64_hash_func, kh_int64_hash_equal)
+	KHASH_INIT(name, khuint64_t, char, 0, kh_int64_hash_func, kh_int64_hash_equal, LINEAR_STEPS_64BIT)
 
 #define KHASH_SET_INIT_INT64(name)										\
-	KHASH_INIT(name, khint64_t, char, 0, kh_int64_hash_func, kh_int64_hash_equal)
+	KHASH_INIT(name, khint64_t, char, 0, kh_int64_hash_func, kh_int64_hash_equal, LINEAR_STEPS_64BIT)
 
 /*! @function
   @abstract     Instantiate a hash map containing 64-bit integer keys
@@ -607,10 +629,10 @@ PANDAS_INLINE khint_t __ac_Wang_hash(khint_t key)
   @param  khval_t  Type of values [type]
  */
 #define KHASH_MAP_INIT_UINT64(name, khval_t)								\
-	KHASH_INIT(name, khuint64_t, khval_t, 1, kh_int64_hash_func, kh_int64_hash_equal)
+	KHASH_INIT(name, khuint64_t, khval_t, 1, kh_int64_hash_func, kh_int64_hash_equal, LINEAR_STEPS_64BIT)
 
 #define KHASH_MAP_INIT_INT64(name, khval_t)								\
-	KHASH_INIT(name, khint64_t, khval_t, 1, kh_int64_hash_func, kh_int64_hash_equal)
+	KHASH_INIT(name, khint64_t, khval_t, 1, kh_int64_hash_func, kh_int64_hash_equal, LINEAR_STEPS_64BIT)
 
 
 typedef const char *kh_cstr_t;
@@ -619,7 +641,7 @@ typedef const char *kh_cstr_t;
   @param  name  Name of the hash table [symbol]
  */
 #define KHASH_SET_INIT_STR(name)										\
-	KHASH_INIT(name, kh_cstr_t, char, 0, kh_str_hash_func, kh_str_hash_equal)
+	KHASH_INIT(name, kh_cstr_t, char, 0, kh_str_hash_func, kh_str_hash_equal, LINEAR_STEPS_BIG_OBJECT)
 
 /*! @function
   @abstract     Instantiate a hash map containing const char* keys
@@ -627,7 +649,7 @@ typedef const char *kh_cstr_t;
   @param  khval_t  Type of values [type]
  */
 #define KHASH_MAP_INIT_STR(name, khval_t)								\
-	KHASH_INIT(name, kh_cstr_t, khval_t, 1, kh_str_hash_func, kh_str_hash_equal)
+	KHASH_INIT(name, kh_cstr_t, khval_t, 1, kh_str_hash_func, kh_str_hash_equal, LINEAR_STEPS_BIG_OBJECT)
 
 
 #define kh_exist_str(h, k) (kh_exist(h, k))
