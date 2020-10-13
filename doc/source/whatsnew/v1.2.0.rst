@@ -316,6 +316,7 @@ Performance improvements
 - Performance improvement in :meth:`RollingGroupby.count` (:issue:`35625`)
 - Small performance decrease to :meth:`Rolling.min` and :meth:`Rolling.max` for fixed windows (:issue:`36567`)
 - Performance improvement in :class:`ExpandingGroupby` (:issue:`37064`)
+- Performance improvement in :meth:`pd.DataFrame.groupby` for ``float`` ``dtype`` (:issue:`28303`)
 
 .. ---------------------------------------------------------------------------
 
