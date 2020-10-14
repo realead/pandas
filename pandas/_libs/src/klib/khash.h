@@ -219,11 +219,7 @@ khint32_t PANDAS_INLINE murmur2_64to32(khint64_t k){
 }
 
 
-#ifdef KHASH_LINEAR
 #define __ac_inc(k, m) 1
-#else
-#define __ac_inc(k, m) (murmur2_32to32(k) | 1) & (m)
-#endif
 
 #define __ac_fsize(m) ((m) < 32? 1 : (m)>>5)
 
