@@ -143,11 +143,9 @@ typedef khint_t khiter_t;
 #define __ac_set_isboth_false(flag, i) __ac_set_isempty_false(flag, i)
 #define __ac_set_isdel_true(flag, i) ((void)0)
 
-#ifdef KHASH_LINEAR
-#define __ac_inc(k, m) 1
-#else
-#define __ac_inc(k, m) (((k)>>3 ^ (k)<<3) | 1) & (m)
-#endif
+// probing strategy follows implementation 
+// of dictobject.c in Python 3.9:
+#define PERTURB_SHIFT 5
 
 #define __ac_fsize(m) ((m) < 32? 1 : (m)>>5)
 
@@ -200,13 +198,15 @@ static const double __ac_HASH_UPPER = 0.77;
 	SCOPE khint_t kh_get_##name(const kh_##name##_t *h, khkey_t key) 	\
 	{																	\
 		if (h->n_buckets) {												\
-			khint_t inc, k, i, last, mask;								\
+			khint_t perturb, k, i, last, mask;							\
 			mask = h->n_buckets - 1;									\
 			k = __hash_func(key); i = k & mask;							\
-			inc = __ac_inc(k, mask); last = i; /* inc==1 for linear probing */ \
+			perturb = k; last = i;                                      \
 			while (!__ac_isempty(h->flags, i) && (__ac_isdel(h->flags, i) || !__hash_equal(h->keys[i], key))) { \
-				i = (i + inc) & mask; 									\
-				if (i == last) return h->n_buckets;						\
+                if(perturb!=0 && perturb < (1<<PERTURB_SHIFT)){ last = i;} \
+                perturb >>= PERTURB_SHIFT;                              \
+                i = mask & (i*5 + perturb + 1);							\
+				if (perturb == 0 && i == last) return h->n_buckets;						\
 			}															\
 			return __ac_iseither(h->flags, i)? h->n_buckets : i;		\
 		} else return 0;												\
@@ -238,11 +238,14 @@ static const double __ac_HASH_UPPER = 0.77;
 					if (kh_is_map) val = h->vals[j];					\
 					__ac_set_isempty_true(h->flags, j);					\
 					while (1) { /* kick-out process; sort of like in Cuckoo hashing */ \
-						khint_t inc, k, i;								\
+						khint_t perturb, k, i;							\
 						k = __hash_func(key);							\
 						i = k & new_mask;								\
-						inc = __ac_inc(k, new_mask);					\
-						while (!__ac_isempty(new_flags, i)) i = (i + inc) & new_mask; \
+						perturb = k;                            		\
+						while (!__ac_isempty(new_flags, i)){            \
+							perturb >>= PERTURB_SHIFT;                  \
+                            i = new_mask & (i*5 + perturb + 1);             \
+                        }                                               \
 						__ac_set_isempty_false(new_flags, i);			\
 						if (i < h->n_buckets && __ac_iseither(h->flags, i) == 0) { /* kick out the existing element */ \
 							{ khkey_t tmp = h->keys[i]; h->keys[i] = key; key = tmp; } \
@@ -275,15 +278,17 @@ static const double __ac_HASH_UPPER = 0.77;
 			else kh_resize_##name(h, h->n_buckets + 1); /* expand the hash table */ \
 		} /* TODO: to implement automatically shrinking; resize() already support shrinking */ \
 		{																\
-			khint_t inc, k, i, site, last, mask = h->n_buckets - 1;		\
+			khint_t perturb, k, i, site, last, mask = h->n_buckets - 1;		\
 			x = site = h->n_buckets; k = __hash_func(key); i = k & mask; \
 			if (__ac_isempty(h->flags, i)) x = i; /* for speed up */	\
 			else {														\
-				inc = __ac_inc(k, mask); last = i;						\
+				perturb = k; last = i;						\
 				while (!__ac_isempty(h->flags, i) && (__ac_isdel(h->flags, i) || !__hash_equal(h->keys[i], key))) { \
 					if (__ac_isdel(h->flags, i)) site = i;				\
-					i = (i + inc) & mask; 								\
-					if (i == last) { x = site; break; }					\
+                    if(perturb!=0 && perturb < (1<<PERTURB_SHIFT)){ last = i;} \
+                    perturb >>= PERTURB_SHIFT;                          \
+                    i = mask & (i*5 + perturb + 1);						\
+					if (perturb == 0 && i == last) { x = site; break; }					\
 				}														\
 				if (x == h->n_buckets) {								\
 					if (__ac_isempty(h->flags, i) && site != h->n_buckets) x = site; \
